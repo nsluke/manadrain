@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mana Pool Shopping List</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup">
+    <header class="header">
+      <h1>Mana Pool List</h1>
+      <span class="card-count" id="card-count">0 cards</span>
+    </header>
+
+    <div class="card-list" id="card-list">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">&#x1F0CF;</div>
+        <p>No cards yet.</p>
+        <p class="hint">Browse Scryfall, EDHREC, or BotBox and click + to add cards.</p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="btn-copy">Copy for Mana Pool</button>
+      <button class="btn btn-secondary" id="btn-open">Open Mana Pool</button>
+      <div class="btn-row-small">
+        <button class="btn btn-text" id="btn-export">Export JSON</button>
+        <button class="btn btn-text" id="btn-import">Import JSON</button>
+        <button class="btn btn-danger-text" id="btn-clear">Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" accept=".json" style="display:none" />
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
