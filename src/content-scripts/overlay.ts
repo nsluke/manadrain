@@ -127,7 +127,13 @@ function getStyles(): string {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      cursor: default;
+      cursor: pointer;
+      text-decoration: none;
+      display: block;
+    }
+    .card-name:hover {
+      color: #c4b5fd;
+      text-decoration: underline;
     }
     .card-meta {
       font-size: 11px;
@@ -363,7 +369,7 @@ function renderCardList() {
       (c) => `
     <div class="card-item" data-id="${c.id}" data-name="${encodeURIComponent(c.name)}"${c.set ? ` data-set="${c.set}"` : ""}${c.collectorNumber ? ` data-number="${c.collectorNumber}"` : ""}>
       <div class="card-info">
-        <div class="card-name" data-tooltip-name="${encodeURIComponent(c.name)}">${escapeHtml(c.name)}</div>
+        <a class="card-name" href="https://manapool.com/card/${c.set ? c.set.toLowerCase() : ""}/${c.collectorNumber || ""}/${encodeURIComponent(c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""))}${c.foil ? "?finish=foil" : ""}" target="_blank" data-tooltip-name="${encodeURIComponent(c.name)}">${escapeHtml(c.name)}</a>
         <div class="card-meta">${c.set ? c.set.toUpperCase() : ""}${c.collectorNumber ? " #" + c.collectorNumber : ""} &middot; ${c.addedFrom}</div>
         ${c.manaPoolPrice != null ? `<div class="card-price">$${(c.manaPoolPrice * c.quantity).toFixed(2)}${c.manaPoolAvailable ? "" : " · out of stock"}</div>` : c.manaPoolPrice === undefined ? `<div class="card-price loading">loading price…</div>` : `<div class="card-price">price unavailable</div>`}
       </div>
