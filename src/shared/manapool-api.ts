@@ -43,24 +43,32 @@ interface ScryfallCard {
 interface ScryfallLookup {
   id: string;
   scryfallPrice: number | null;
+  scryfallFoilPrice: number | null;
 }
 
-// Cache scryfall lookups (name/set/number -> id + scryfall price)
+// Cache scryfall lookups (name/set/number -> id + scryfall prices)
 const scryfallCache = new Map<string, ScryfallLookup | null>();
 // Cache price lookups (scryfall_id -> price data)
 const priceCache = new Map<string, { price: number | null; available: boolean; fetchedAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/**
- * Extract the best available USD price from Scryfall's prices object.
- * Tries usd -> usd_foil -> usd_etched.
- */
-function extractScryfallPrice(prices?: ScryfallCard["prices"]): number | null {
-  if (!prices) return null;
-  const raw = prices.usd ?? prices.usd_foil ?? prices.usd_etched;
+function parsePrice(raw: string | null | undefined): number | null {
   if (raw == null) return null;
   const parsed = parseFloat(raw);
   return isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Extract the best available USD price from Scryfall's prices object.
+ * If foil is requested, tries usd_foil -> usd_etched -> usd.
+ * Otherwise tries usd -> usd_foil -> usd_etched.
+ */
+function extractScryfallPrice(prices?: ScryfallCard["prices"], foil?: boolean): number | null {
+  if (!prices) return null;
+  if (foil) {
+    return parsePrice(prices.usd_foil) ?? parsePrice(prices.usd_etched) ?? parsePrice(prices.usd);
+  }
+  return parsePrice(prices.usd) ?? parsePrice(prices.usd_foil) ?? parsePrice(prices.usd_etched);
 }
 
 /**
@@ -96,7 +104,8 @@ async function getScryfallData(
     const card: ScryfallCard = await resp.json();
     const result: ScryfallLookup = {
       id: card.id,
-      scryfallPrice: extractScryfallPrice(card.prices),
+      scryfallPrice: extractScryfallPrice(card.prices, false),
+      scryfallFoilPrice: extractScryfallPrice(card.prices, true),
     };
     scryfallCache.set(cacheKey, result);
     return result;
@@ -151,14 +160,16 @@ async function fetchManaPoolPrices(
  * Returns a map keyed by card ID (not name) to handle cards with the same name.
  */
 export async function fetchCardPrices(
-  cards: { id: string; name: string; set?: string; collectorNumber?: string }[]
+  cards: { id: string; name: string; set?: string; collectorNumber?: string; foil?: boolean }[]
 ): Promise<Map<string, { price: number | null; available: boolean }>> {
   const results = new Map<string, { price: number | null; available: boolean }>();
 
   // Step 1: Resolve Scryfall IDs and prices (with rate limiting)
-  const cardToScryfall = new Map<string, ScryfallLookup>(); // keyed by card.id
+  const cardToScryfall = new Map<string, ScryfallLookup>();
+  const cardFoilMap = new Map<string, boolean>();
 
   for (const card of cards) {
+    cardFoilMap.set(card.id, card.foil ?? false);
     const cacheKey = card.set && card.collectorNumber
       ? `${card.set.toLowerCase()}/${card.collectorNumber}`
       : `name:${card.name.toLowerCase().trim()}`;
@@ -195,8 +206,10 @@ export async function fetchCardPrices(
         results.set(cardId, priceData);
         priceCache.set(scryfall.id, { ...priceData, fetchedAt: Date.now() });
       } else {
-        // Fall back to Scryfall price (usd -> usd_foil -> usd_etched)
-        const fallback = { price: scryfall.scryfallPrice, available: false };
+        // Fall back to Scryfall price, respecting foil preference
+        const isFoil = cardFoilMap.get(cardId) ?? false;
+        const price = isFoil ? (scryfall.scryfallFoilPrice ?? scryfall.scryfallPrice) : scryfall.scryfallPrice;
+        const fallback = { price, available: false };
         results.set(cardId, fallback);
         priceCache.set(scryfall.id, { ...fallback, fetchedAt: Date.now() });
       }

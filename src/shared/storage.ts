@@ -79,6 +79,19 @@ export async function updateQuantity(
   return data.cards;
 }
 
+export async function toggleFoil(id: string): Promise<CardEntry[]> {
+  const data = await loadCards();
+  const card = data.cards.find((c) => c.id === id);
+  if (card) {
+    card.foil = !card.foil;
+    // Reset price so it re-fetches with the correct foil preference
+    card.manaPoolPrice = undefined;
+    card.manaPoolAvailable = undefined;
+  }
+  await saveCards(data);
+  return data.cards;
+}
+
 export async function clearCards(): Promise<CardEntry[]> {
   const data = defaultData();
   await chrome.storage.sync.set({ [STORAGE_KEY]: data });

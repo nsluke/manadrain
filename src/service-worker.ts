@@ -1,4 +1,4 @@
-import { addCard, removeCard, updateQuantity, clearCards, loadCards, setOverlayExpanded, updateCardPrices } from "./shared/storage";
+import { addCard, removeCard, updateQuantity, toggleFoil, clearCards, loadCards, setOverlayExpanded, updateCardPrices } from "./shared/storage";
 import { fetchCardPrices } from "./shared/manapool-api";
 
 // Handle messages from content scripts and popup
@@ -27,6 +27,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         broadcastCardsUpdate(cards);
         updateBadge(cards);
         sendResponse({ cards });
+      });
+      return true;
+
+    case "TOGGLE_FOIL":
+      toggleFoil(message.id).then((cards) => {
+        broadcastCardsUpdate(cards);
+        sendResponse({ cards });
+        refreshPrices(cards);
       });
       return true;
 
@@ -83,6 +91,7 @@ function refreshPrices(cards: import("./shared/types").CardEntry[]) {
         name: c.name,
         set: c.set,
         collectorNumber: c.collectorNumber,
+        foil: c.foil,
       }));
       const priceMap = await fetchCardPrices(lookups);
 

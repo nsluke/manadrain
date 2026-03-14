@@ -172,6 +172,28 @@ function getStyles(): string {
       text-align: center;
     }
 
+    .foil-btn {
+      padding: 0 6px;
+      height: 24px;
+      border-radius: 6px;
+      border: 1px solid #4c4470;
+      background: #2a2640;
+      color: #6b6188;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .foil-btn:hover { background: #3b3556; }
+    .foil-btn.active {
+      color: #fbbf24;
+      border-color: #fbbf24;
+      background: rgba(251, 191, 36, 0.15);
+    }
+
     .delete-btn {
       width: 24px;
       height: 24px;
@@ -345,6 +367,7 @@ function renderCardList() {
         <div class="card-meta">${c.set ? c.set.toUpperCase() : ""}${c.collectorNumber ? " #" + c.collectorNumber : ""} &middot; ${c.addedFrom}</div>
         ${c.manaPoolPrice != null ? `<div class="card-price">$${(c.manaPoolPrice * c.quantity).toFixed(2)}${c.manaPoolAvailable ? "" : " · out of stock"}</div>` : c.manaPoolPrice === undefined ? `<div class="card-price loading">loading price…</div>` : `<div class="card-price">price unavailable</div>`}
       </div>
+      <button class="foil-btn${c.foil ? " active" : ""}" data-action="foil" data-id="${c.id}" title="Toggle foil">Foil</button>
       <div class="qty-controls">
         <button class="qty-btn" data-action="dec" data-id="${c.id}">-</button>
         <span class="qty-value">${c.quantity}</span>
@@ -407,6 +430,8 @@ function setupEvents() {
           quantity: card.quantity - 1,
         });
       }
+    } else if (action === "foil") {
+      chrome.runtime.sendMessage({ type: "TOGGLE_FOIL", id });
     } else if (action === "delete") {
       chrome.runtime.sendMessage({ type: "REMOVE_CARD", id });
     }

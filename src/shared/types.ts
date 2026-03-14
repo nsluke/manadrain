@@ -6,6 +6,7 @@ export interface CardEntry {
   quantity: number;
   addedFrom: string;
   addedAt: number;
+  foil?: boolean;
   manaPoolPrice?: number | null;
   manaPoolAvailable?: boolean | null;
 }
@@ -19,6 +20,7 @@ export type MessageType =
   | { type: "ADD_CARD"; card: Omit<CardEntry, "id" | "quantity" | "addedAt"> }
   | { type: "REMOVE_CARD"; id: string }
   | { type: "UPDATE_QUANTITY"; id: string; quantity: number }
+  | { type: "TOGGLE_FOIL"; id: string }
   | { type: "GET_CARDS" }
   | { type: "CLEAR_CARDS" }
   | { type: "CARDS_UPDATED"; cards: CardEntry[] }
@@ -39,6 +41,7 @@ export function formatMassEntry(cards: CardEntry[]): string {
       let line = `${c.quantity} ${c.name}`;
       if (c.set) line += ` [${c.set.toUpperCase()}]`;
       if (c.collectorNumber) line += ` ${c.collectorNumber}`;
+      if (c.foil) line += ` *F*`;
       return line;
     })
     .join("\n");
