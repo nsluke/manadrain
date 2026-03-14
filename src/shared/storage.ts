@@ -105,16 +105,14 @@ export async function importData(json: string): Promise<CardEntry[]> {
 }
 
 export async function updateCardPrices(
-  updates: { name: string; price: number | null; available: boolean }[]
+  updates: { id: string; price: number | null; available: boolean }[]
 ): Promise<CardEntry[]> {
   const data = await loadCards();
   for (const update of updates) {
-    const nameLower = update.name.toLowerCase().trim();
-    for (const card of data.cards) {
-      if (card.name.toLowerCase().trim() === nameLower) {
-        card.manaPoolPrice = update.price;
-        card.manaPoolAvailable = update.available;
-      }
+    const card = data.cards.find((c) => c.id === update.id);
+    if (card) {
+      card.manaPoolPrice = update.price;
+      card.manaPoolAvailable = update.available;
     }
   }
   await chrome.storage.sync.set({ [STORAGE_KEY]: data });

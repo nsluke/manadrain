@@ -1,24 +1,7 @@
 import { initOverlay, addCardFromSite } from "./overlay";
 
 const SOURCE = "botbox.dev";
-const PROCESSED_ATTR = "data-mana-pool-processed";
-
-/**
- * BotBox stores card data in a page-level JS variable `currentPack`.
- * Each card is an array: [4]=name, [9]=setCode, [10]=collectorNumber.
- *
- * A separate MAIN-world content script (botbox-bridge.ts) reads currentPack
- * and sends the data here via window.postMessage.
- */
-
-interface BotBoxCard {
-  name: string;
-  set?: string;
-  collectorNumber?: string;
-}
-
-// Card data received from the page context bridge
-let packCards: BotBoxCard[] = [];
+const BTN_ATTR = "data-mana-pool-btn";
 
 function createAddButton(onClick: () => void): HTMLElement {
   const btn = document.createElement("button");
@@ -70,62 +53,42 @@ function createAddButton(onClick: () => void): HTMLElement {
 }
 
 /**
- * Listen for pack data from the MAIN-world bridge script.
- */
-window.addEventListener("message", (event) => {
-  if (event.source !== window) return;
-  if (event.data?.type !== "MANA_POOL_BOTBOX_PACK") return;
-
-  packCards = event.data.cards as BotBoxCard[];
-  attachButtons();
-});
-
-/**
- * Attach "+" buttons to card elements in the DOM,
- * using the card data we got from the page context.
+ * Attach "+" buttons to card elements in the DOM.
+ * Card data (name, set, collector number) is stamped as data attributes
+ * by the MAIN-world bridge script reading from currentPack.
  */
 function attachButtons() {
-  const cardDivs = document.querySelectorAll<HTMLElement>(
-    '.card:not([data-mana-pool-processed])'
-  );
-
-  // Match DOM card elements to pack data by index.
-  // BotBox renders cards in the same order as currentPack.
-  const allCardDivs = document.querySelectorAll<HTMLElement>('.card');
+  const cardDivs = document.querySelectorAll<HTMLElement>('.card');
 
   for (const cardDiv of cardDivs) {
-    cardDiv.setAttribute(PROCESSED_ATTR, "true");
-
-    // Figure out this card's position among all .card divs
-    const idx = Array.from(allCardDivs).indexOf(cardDiv);
-    const cardData = idx >= 0 && idx < packCards.length ? packCards[idx] : null;
-
-    if (!cardData || !cardData.name) continue;
+    // Skip if our button is still present in the DOM
+    if (cardDiv.querySelector(`[${BTN_ATTR}]`)) continue;
 
     const computed = window.getComputedStyle(cardDiv);
     if (computed.position === "static") {
       cardDiv.style.position = "relative";
     }
 
-    const name = cardData.name;
-    const set = cardData.set || undefined;
-    const collectorNumber = cardData.collectorNumber || undefined;
-
+    // Read data attributes at click time — the bridge keeps them current
     const btn = createAddButton(() => {
+      const name = cardDiv.getAttribute("data-mp-name");
+      const set = cardDiv.getAttribute("data-mp-set") || undefined;
+      const collectorNumber = cardDiv.getAttribute("data-mp-number") || undefined;
+      if (!name) return;
       addCardFromSite(name, set, collectorNumber, SOURCE);
     });
+    btn.setAttribute(BTN_ATTR, "true");
     cardDiv.appendChild(btn);
   }
 }
 
 // Initialize
 initOverlay();
+attachButtons();
 
 // Watch for DOM changes (BotBox loads cards dynamically after pack opening)
 const observer = new MutationObserver(() => {
-  if (packCards.length > 0) {
-    attachButtons();
-  }
+  attachButtons();
 });
 
 observer.observe(document.body, {

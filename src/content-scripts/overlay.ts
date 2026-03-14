@@ -320,7 +320,9 @@ function renderCardList() {
   badge.style.display = totalQty > 0 ? "flex" : "none";
 
   // Update extension badge via service worker
-  chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: totalQty }).catch(() => {});
+  chrome.runtime
+    .sendMessage({ type: "UPDATE_BADGE", count: totalQty })
+    .catch(() => {});
 
   const totalPrice = cards.reduce((s, c) => {
     if (c.manaPoolPrice != null) return s + c.manaPoolPrice * c.quantity;
@@ -337,7 +339,7 @@ function renderCardList() {
   list.innerHTML = cards
     .map(
       (c) => `
-    <div class="card-item" data-id="${c.id}" data-name="${encodeURIComponent(c.name)}">
+    <div class="card-item" data-id="${c.id}" data-name="${encodeURIComponent(c.name)}"${c.set ? ` data-set="${c.set}"` : ""}${c.collectorNumber ? ` data-number="${c.collectorNumber}"` : ""}>
       <div class="card-info">
         <div class="card-name" data-tooltip-name="${encodeURIComponent(c.name)}">${escapeHtml(c.name)}</div>
         <div class="card-meta">${c.set ? c.set.toUpperCase() : ""}${c.collectorNumber ? " #" + c.collectorNumber : ""} &middot; ${c.addedFrom}</div>
@@ -349,7 +351,7 @@ function renderCardList() {
         <button class="qty-btn" data-action="inc" data-id="${c.id}">+</button>
       </div>
       <button class="delete-btn" data-action="delete" data-id="${c.id}">&times;</button>
-    </div>`
+    </div>`,
     )
     .join("");
 }
@@ -366,12 +368,16 @@ function setupEvents() {
   const fab = overlayRoot.getElementById("fab")!;
   const panel = overlayRoot.getElementById("panel")!;
   const tooltip = overlayRoot.getElementById("tooltip")!;
-  const tooltipImg = overlayRoot.getElementById("tooltip-img") as HTMLImageElement;
+  const tooltipImg = overlayRoot.getElementById(
+    "tooltip-img",
+  ) as HTMLImageElement;
 
   fab.addEventListener("click", () => {
     expanded = !expanded;
     panel.classList.toggle("open", expanded);
-    chrome.runtime.sendMessage({ type: "SET_OVERLAY_EXPANDED", expanded }).catch(() => {});
+    chrome.runtime
+      .sendMessage({ type: "SET_OVERLAY_EXPANDED", expanded })
+      .catch(() => {});
   });
 
   // Card list interactions (delegated)
@@ -386,38 +392,61 @@ function setupEvents() {
     if (action === "inc") {
       const card = cards.find((c) => c.id === id);
       if (card) {
-        chrome.runtime.sendMessage({ type: "UPDATE_QUANTITY", id, quantity: card.quantity + 1 });
+        chrome.runtime.sendMessage({
+          type: "UPDATE_QUANTITY",
+          id,
+          quantity: card.quantity + 1,
+        });
       }
     } else if (action === "dec") {
       const card = cards.find((c) => c.id === id);
       if (card) {
-        chrome.runtime.sendMessage({ type: "UPDATE_QUANTITY", id, quantity: card.quantity - 1 });
+        chrome.runtime.sendMessage({
+          type: "UPDATE_QUANTITY",
+          id,
+          quantity: card.quantity - 1,
+        });
       }
     } else if (action === "delete") {
       chrome.runtime.sendMessage({ type: "REMOVE_CARD", id });
     }
   });
 
-  // Tooltip on hover
-  overlayRoot.getElementById("card-list")!.addEventListener("mouseover", (e) => {
-    const target = e.target as HTMLElement;
-    const nameEl = target.closest(".card-name") as HTMLElement | null;
-    if (!nameEl) return;
-    const name = decodeURIComponent(nameEl.dataset.tooltipName || "");
-    if (!name) return;
-    tooltipImg.src = `${SCRYFALL_IMG}${encodeURIComponent(name)}&format=image&version=normal`;
-    tooltip.style.display = "block";
-  });
+  // Tooltip on hover — show card image
+  overlayRoot
+    .getElementById("card-list")!
+    .addEventListener("mouseover", (e) => {
+      const target = e.target as HTMLElement;
+      const cardEl = target.closest(".card-item") as HTMLElement | null;
+      if (!cardEl) return;
 
-  overlayRoot.getElementById("card-list")!.addEventListener("mousemove", (e) => {
-    const mouseEvent = e as MouseEvent;
-    tooltip.style.left = `${mouseEvent.clientX - 260}px`;
-    tooltip.style.top = `${Math.max(10, mouseEvent.clientY - 170)}px`;
-  });
+      const set = cardEl.dataset.set;
+      const num = cardEl.dataset.number;
+
+      if (set && num) {
+        // Use set/number for exact printing
+        tooltipImg.src = `https://api.scryfall.com/cards/${set.toLowerCase()}/${num}?format=image&version=normal`;
+      } else {
+        // Fall back to name-based lookup
+        const name = decodeURIComponent(cardEl.dataset.name || "");
+        if (!name) return;
+        tooltipImg.src = `${SCRYFALL_IMG}${encodeURIComponent(name)}&format=image&version=normal`;
+      }
+
+      tooltip.style.display = "block";
+    });
+
+  overlayRoot
+    .getElementById("card-list")!
+    .addEventListener("mousemove", (e) => {
+      const mouseEvent = e as MouseEvent;
+      tooltip.style.left = `${mouseEvent.clientX - 260}px`;
+      tooltip.style.top = `${Math.max(10, mouseEvent.clientY - 170)}px`;
+    });
 
   overlayRoot.getElementById("card-list")!.addEventListener("mouseout", (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest(".card-name")) {
+    if (target.closest(".card-item")) {
       tooltip.style.display = "none";
     }
   });
@@ -425,7 +454,9 @@ function setupEvents() {
   // Action buttons
   overlayRoot.getElementById("btn-copy")!.addEventListener("click", () => {
     const text = formatMassEntry(cards);
-    navigator.clipboard.writeText(text).then(() => showToast("Copied to clipboard!"));
+    navigator.clipboard
+      .writeText(text)
+      .then(() => showToast("Copied to clipboard!"));
   });
 
   overlayRoot.getElementById("btn-open")!.addEventListener("click", () => {
@@ -467,15 +498,29 @@ export function initOverlay() {
     if (msg.type === "CARDS_UPDATED") {
       cards = msg.cards;
       renderCardList();
+      cardUpdateListeners.forEach((cb) => cb());
     }
   });
+}
+
+export function getCards(): CardEntry[] {
+  return cards;
+}
+
+export function removeCardById(id: string) {
+  chrome.runtime.sendMessage({ type: "REMOVE_CARD", id });
+}
+
+const cardUpdateListeners: Array<() => void> = [];
+export function onCardsUpdated(callback: () => void) {
+  cardUpdateListeners.push(callback);
 }
 
 export function addCardFromSite(
   name: string,
   set?: string,
   collectorNumber?: string,
-  source?: string
+  source?: string,
 ) {
   chrome.runtime.sendMessage(
     {
@@ -487,6 +532,6 @@ export function addCardFromSite(
         addedFrom: source || window.location.hostname,
       },
     },
-    () => showToast(`Added: ${name}`)
+    () => showToast(`Added: ${name}`),
   );
 }

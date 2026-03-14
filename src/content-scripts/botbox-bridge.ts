@@ -1,36 +1,39 @@
 /**
  * BotBox page-context bridge.
  *
- * This script runs in the MAIN world (same JS context as BotBox's own code)
- * so it can read the `currentPack` variable directly. It sends card data
- * to the ISOLATED world content script via window.postMessage.
+ * Runs in the MAIN world (same JS context as BotBox's own code)
+ * so it can read `currentPack`. Stamps card data as data attributes
+ * directly on `.card` DOM elements so the ISOLATED-world content script
+ * can read them at click time.
  */
 
 declare const currentPack: unknown[][] | undefined;
 
-let lastPackLength = -1;
-
-function sendPackData() {
+function stampCardData() {
   if (typeof currentPack === "undefined" || !Array.isArray(currentPack)) return;
-  if (currentPack.length === lastPackLength) return;
-  lastPackLength = currentPack.length;
 
-  const cards = currentPack
-    .map((c) => ({
-      name: (c[4] as string) || "",
-      set: (c[9] as string) || "",
-      collectorNumber: c[10] != null ? String(c[10]) : "",
-    }))
-    .filter((c) => c.name.length > 0);
+  const cardDivs = document.querySelectorAll<HTMLElement>(".card");
 
-  window.postMessage({ type: "MANA_POOL_BOTBOX_PACK", cards }, "*");
+  for (let i = 0; i < cardDivs.length && i < currentPack.length; i++) {
+    const c = currentPack[i];
+    const div = cardDivs[i];
+    const name = (c[4] as string) || "";
+    const set = (c[9] as string) || "";
+    const collectorNumber = c[10] != null ? String(c[10]) : "";
+
+    if (name) {
+      div.setAttribute("data-mp-name", name);
+      div.setAttribute("data-mp-set", set);
+      div.setAttribute("data-mp-number", collectorNumber);
+    }
+  }
 }
 
-// Poll periodically
-setInterval(sendPackData, 800);
+// Poll periodically (BotBox updates currentPack when new packs open)
+setInterval(stampCardData, 500);
 
 // Also fire on DOM changes in the pack area
 const packArea = document.getElementById("packarea") || document.body;
 new MutationObserver(() => {
-  setTimeout(sendPackData, 200);
+  setTimeout(stampCardData, 100);
 }).observe(packArea, { childList: true, subtree: true });

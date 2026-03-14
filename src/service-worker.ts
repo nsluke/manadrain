@@ -79,6 +79,7 @@ function refreshPrices(cards: import("./shared/types").CardEntry[]) {
       }
 
       const lookups = needsPricing.map((c) => ({
+        id: c.id,
         name: c.name,
         set: c.set,
         collectorNumber: c.collectorNumber,
@@ -90,10 +91,10 @@ function refreshPrices(cards: import("./shared/types").CardEntry[]) {
         return;
       }
 
-      // Build updates
-      const updates: { name: string; price: number | null; available: boolean }[] = [];
-      for (const [name, info] of priceMap) {
-        updates.push({ name, price: info.price, available: info.available });
+      // Build updates keyed by card ID
+      const updates: { id: string; price: number | null; available: boolean }[] = [];
+      for (const [id, info] of priceMap) {
+        updates.push({ id, price: info.price, available: info.available });
       }
 
       const updatedCards = await updateCardPrices(updates);

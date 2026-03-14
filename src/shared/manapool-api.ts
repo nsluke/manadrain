@@ -33,28 +33,50 @@ interface ScryfallCard {
   name: string;
   set: string;
   collector_number: string;
+  prices?: {
+    usd: string | null;
+    usd_foil: string | null;
+    usd_etched: string | null;
+  };
 }
 
-// Cache scryfall ID lookups (name/set/number -> scryfall_id)
-const scryfallIdCache = new Map<string, string | null>();
+interface ScryfallLookup {
+  id: string;
+  scryfallPrice: number | null;
+}
+
+// Cache scryfall lookups (name/set/number -> id + scryfall price)
+const scryfallCache = new Map<string, ScryfallLookup | null>();
 // Cache price lookups (scryfall_id -> price data)
 const priceCache = new Map<string, { price: number | null; available: boolean; fetchedAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Look up a card's Scryfall ID. Tries set/number first, falls back to name search.
+ * Extract the best available USD price from Scryfall's prices object.
+ * Tries usd -> usd_foil -> usd_etched.
  */
-async function getScryfallId(
+function extractScryfallPrice(prices?: ScryfallCard["prices"]): number | null {
+  if (!prices) return null;
+  const raw = prices.usd ?? prices.usd_foil ?? prices.usd_etched;
+  if (raw == null) return null;
+  const parsed = parseFloat(raw);
+  return isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Look up a card's Scryfall ID and price. Tries set/number first, falls back to name search.
+ */
+async function getScryfallData(
   name: string,
   set?: string,
   collectorNumber?: string
-): Promise<string | null> {
+): Promise<ScryfallLookup | null> {
   const cacheKey = set && collectorNumber
     ? `${set.toLowerCase()}/${collectorNumber}`
     : `name:${name.toLowerCase().trim()}`;
 
-  if (scryfallIdCache.has(cacheKey)) {
-    return scryfallIdCache.get(cacheKey)!;
+  if (scryfallCache.has(cacheKey)) {
+    return scryfallCache.get(cacheKey)!;
   }
 
   try {
@@ -67,15 +89,19 @@ async function getScryfallId(
 
     const resp = await fetch(url);
     if (!resp.ok) {
-      scryfallIdCache.set(cacheKey, null);
+      scryfallCache.set(cacheKey, null);
       return null;
     }
 
     const card: ScryfallCard = await resp.json();
-    scryfallIdCache.set(cacheKey, card.id);
-    return card.id;
+    const result: ScryfallLookup = {
+      id: card.id,
+      scryfallPrice: extractScryfallPrice(card.prices),
+    };
+    scryfallCache.set(cacheKey, result);
+    return result;
   } catch {
-    scryfallIdCache.set(cacheKey, null);
+    scryfallCache.set(cacheKey, null);
     return null;
   }
 }
@@ -120,16 +146,17 @@ async function fetchManaPoolPrices(
 }
 
 /**
- * Main entry point: given a list of cards (name + optional set/number),
+ * Main entry point: given a list of cards (id + name + optional set/number),
  * resolve Scryfall IDs and fetch Mana Pool pricing.
+ * Returns a map keyed by card ID (not name) to handle cards with the same name.
  */
 export async function fetchCardPrices(
-  cards: { name: string; set?: string; collectorNumber?: string }[]
+  cards: { id: string; name: string; set?: string; collectorNumber?: string }[]
 ): Promise<Map<string, { price: number | null; available: boolean }>> {
   const results = new Map<string, { price: number | null; available: boolean }>();
 
-  // Step 1: Resolve Scryfall IDs (with rate limiting — 100ms between requests)
-  const cardToScryfallId = new Map<string, string>();
+  // Step 1: Resolve Scryfall IDs and prices (with rate limiting)
+  const cardToScryfall = new Map<string, ScryfallLookup>(); // keyed by card.id
 
   for (const card of cards) {
     const cacheKey = card.set && card.collectorNumber
@@ -137,21 +164,20 @@ export async function fetchCardPrices(
       : `name:${card.name.toLowerCase().trim()}`;
 
     // Check price cache first
-    const cachedScryfallId = scryfallIdCache.get(cacheKey);
-    if (cachedScryfallId) {
-      const cachedPrice = priceCache.get(cachedScryfallId);
+    const cachedLookup = scryfallCache.get(cacheKey);
+    if (cachedLookup) {
+      const cachedPrice = priceCache.get(cachedLookup.id);
       if (cachedPrice && Date.now() - cachedPrice.fetchedAt < CACHE_TTL_MS) {
-        results.set(card.name, { price: cachedPrice.price, available: cachedPrice.available });
+        results.set(card.id, { price: cachedPrice.price, available: cachedPrice.available });
         continue;
       }
     }
 
-    const scryfallId = await getScryfallId(card.name, card.set, card.collectorNumber);
-    if (scryfallId) {
-      cardToScryfallId.set(card.name, scryfallId);
+    const scryfallData = await getScryfallData(card.name, card.set, card.collectorNumber);
+    if (scryfallData) {
+      cardToScryfall.set(card.id, scryfallData);
     } else {
-      // Card not found on Scryfall
-      results.set(card.name, { price: null, available: false });
+      results.set(card.id, { price: null, available: false });
     }
 
     // Small delay to be polite to Scryfall (they request 50-100ms between requests)
@@ -159,17 +185,20 @@ export async function fetchCardPrices(
   }
 
   // Step 2: Batch fetch from Mana Pool
-  const scryfallIds = [...new Set(cardToScryfallId.values())];
+  const scryfallIds = [...new Set([...cardToScryfall.values()].map((s) => s.id))];
   if (scryfallIds.length > 0) {
     const manaPoolPrices = await fetchManaPoolPrices(scryfallIds);
 
-    for (const [cardName, scryfallId] of cardToScryfallId) {
-      const priceData = manaPoolPrices.get(scryfallId);
-      if (priceData) {
-        results.set(cardName, priceData);
-        priceCache.set(scryfallId, { ...priceData, fetchedAt: Date.now() });
+    for (const [cardId, scryfall] of cardToScryfall) {
+      const priceData = manaPoolPrices.get(scryfall.id);
+      if (priceData && priceData.price != null) {
+        results.set(cardId, priceData);
+        priceCache.set(scryfall.id, { ...priceData, fetchedAt: Date.now() });
       } else {
-        results.set(cardName, { price: null, available: false });
+        // Fall back to Scryfall price (usd -> usd_foil -> usd_etched)
+        const fallback = { price: scryfall.scryfallPrice, available: false };
+        results.set(cardId, fallback);
+        priceCache.set(scryfall.id, { ...fallback, fetchedAt: Date.now() });
       }
     }
   }
