@@ -18,6 +18,7 @@ const entryPoints = [
   { in: "src/content-scripts/edhrec.ts", out: "content-scripts/edhrec" },
   { in: "src/content-scripts/botbox.ts", out: "content-scripts/botbox" },
   { in: "src/content-scripts/botbox-bridge.ts", out: "content-scripts/botbox-bridge" },
+  { in: "src/content-scripts/manapool.ts", out: "content-scripts/manapool" },
 ];
 
 async function build() {

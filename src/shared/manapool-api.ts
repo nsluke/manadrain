@@ -19,7 +19,10 @@ interface ManaPoolProduct {
   scryfall_id: string;
   available_quantity: number;
   price_cents: number | null;
+  price_cents_foil: number | null;
+  price_cents_etched: number | null;
   price_market: number | null;
+  price_market_foil: number | null;
   url: string;
 }
 
@@ -48,7 +51,7 @@ interface ScryfallLookup {
 
 // Cache scryfall lookups (name/set/number -> id + scryfall prices)
 const scryfallCache = new Map<string, ScryfallLookup | null>();
-// Cache price lookups (scryfall_id -> price data)
+// Cache price lookups (scryfall_id:foil/nonfoil -> price data)
 const priceCache = new Map<string, { price: number | null; available: boolean; fetchedAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -115,14 +118,21 @@ async function getScryfallData(
   }
 }
 
+interface ManaPoolPriceData {
+  price: number | null;
+  foilPrice: number | null;
+  etchedPrice: number | null;
+  available: boolean;
+}
+
 /**
  * Fetch prices from Mana Pool for a list of Scryfall IDs.
  * The GET /products/singles endpoint accepts up to 100 scryfall_ids and requires no auth.
  */
 async function fetchManaPoolPrices(
   scryfallIds: string[]
-): Promise<Map<string, { price: number | null; available: boolean }>> {
-  const results = new Map<string, { price: number | null; available: boolean }>();
+): Promise<Map<string, ManaPoolPriceData>> {
+  const results = new Map<string, ManaPoolPriceData>();
 
   // Batch into chunks of 100
   for (let i = 0; i < scryfallIds.length; i += 100) {
@@ -143,8 +153,10 @@ async function fetchManaPoolPrices(
 
       for (const product of data.data) {
         const price = product.price_cents != null ? product.price_cents / 100 : null;
+        const foilPrice = product.price_cents_foil != null ? product.price_cents_foil / 100 : null;
+        const etchedPrice = product.price_cents_etched != null ? product.price_cents_etched / 100 : null;
         const available = product.available_quantity > 0;
-        results.set(product.scryfall_id, { price, available });
+        results.set(product.scryfall_id, { price, foilPrice, etchedPrice, available });
       }
     } catch (err) {
       console.warn("Mana Pool API error:", err);
@@ -169,15 +181,17 @@ export async function fetchCardPrices(
   const cardFoilMap = new Map<string, boolean>();
 
   for (const card of cards) {
-    cardFoilMap.set(card.id, card.foil ?? false);
+    const isFoil = card.foil ?? false;
+    cardFoilMap.set(card.id, isFoil);
     const cacheKey = card.set && card.collectorNumber
       ? `${card.set.toLowerCase()}/${card.collectorNumber}`
       : `name:${card.name.toLowerCase().trim()}`;
 
-    // Check price cache first
+    // Check price cache first (keyed by scryfall_id + foil status)
     const cachedLookup = scryfallCache.get(cacheKey);
     if (cachedLookup) {
-      const cachedPrice = priceCache.get(cachedLookup.id);
+      const priceCacheKey = `${cachedLookup.id}:${isFoil ? "foil" : "nonfoil"}`;
+      const cachedPrice = priceCache.get(priceCacheKey);
       if (cachedPrice && Date.now() - cachedPrice.fetchedAt < CACHE_TTL_MS) {
         results.set(card.id, { price: cachedPrice.price, available: cachedPrice.available });
         continue;
@@ -201,18 +215,33 @@ export async function fetchCardPrices(
     const manaPoolPrices = await fetchManaPoolPrices(scryfallIds);
 
     for (const [cardId, scryfall] of cardToScryfall) {
-      const priceData = manaPoolPrices.get(scryfall.id);
-      if (priceData && priceData.price != null) {
-        results.set(cardId, priceData);
-        priceCache.set(scryfall.id, { ...priceData, fetchedAt: Date.now() });
-      } else {
-        // Fall back to Scryfall price, respecting foil preference
-        const isFoil = cardFoilMap.get(cardId) ?? false;
-        const price = isFoil ? (scryfall.scryfallFoilPrice ?? scryfall.scryfallPrice) : scryfall.scryfallPrice;
-        const fallback = { price, available: false };
-        results.set(cardId, fallback);
-        priceCache.set(scryfall.id, { ...fallback, fetchedAt: Date.now() });
+      const isFoil = cardFoilMap.get(cardId) ?? false;
+      const mpData = manaPoolPrices.get(scryfall.id);
+
+      let price: number | null = null;
+      let available = false;
+
+      if (mpData) {
+        available = mpData.available;
+        // Pick the right ManaPool price based on foil status
+        if (isFoil) {
+          price = mpData.foilPrice ?? mpData.etchedPrice ?? mpData.price;
+        } else {
+          price = mpData.price ?? mpData.foilPrice ?? mpData.etchedPrice;
+        }
       }
+
+      // Fall back to Scryfall price if ManaPool has no price
+      if (price == null) {
+        price = isFoil
+          ? (scryfall.scryfallFoilPrice ?? scryfall.scryfallPrice)
+          : (scryfall.scryfallPrice ?? scryfall.scryfallFoilPrice);
+      }
+
+      const result = { price, available };
+      results.set(cardId, result);
+      const priceCacheKey = `${scryfall.id}:${isFoil ? "foil" : "nonfoil"}`;
+      priceCache.set(priceCacheKey, { ...result, fetchedAt: Date.now() });
     }
   }
 

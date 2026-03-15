@@ -41,6 +41,11 @@
       "matches": ["*://*.botbox.dev/*"],
       "js": ["content-scripts/botbox.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.manapool.com/*"],
+      "js": ["content-scripts/manapool.js"],
+      "run_at": "document_idle"
     }
   ]
 }

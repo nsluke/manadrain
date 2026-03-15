@@ -1,13 +1,11 @@
 import { initOverlay, addCardFromSite, getCards, removeCardById, onCardsUpdated } from "./overlay";
 import { makeCardId } from "../shared/types";
 
-const SOURCE = "scryfall.com";
+const SOURCE = "manapool.com";
 const PROCESSED_ATTR = "data-mana-pool-processed";
 const BTN_ATTR = "data-mana-pool-btn";
 
 function parseCardUrl(url: string): { set: string; collectorNumber: string; name: string } | null {
-  // Pattern: /card/{set}/{collectorNumber}/{name}
-  // Collector numbers can include letters, ★, and other suffixes (e.g. "260★" for etched foils)
   const match = url.match(/\/card\/([a-z0-9]+)\/([^/]+)\/([^/?#]+)/i);
   if (!match) return null;
   return {
@@ -23,27 +21,30 @@ function isCardInList(name: string, set?: string, collectorNumber?: string): boo
 }
 
 /**
- * Extract the canonical card name from Scryfall's page.
- * Handles double-faced cards by joining face names with " // ".
+ * Get the card name from the page. Tries:
+ * 1. <title> tag (format: "Card Name - Set Name")
+ * 2. <h1> element
+ * 3. Card image alt text (format: "Card Name - Set Name - Finish")
+ * 4. URL fallback
  */
 function getCardName(fallback: string): string {
-  // 1. Scryfall's card-text elements (handles double-faced cards)
-  const nameEls = document.querySelectorAll(".card-text-card-name");
-  if (nameEls.length > 0) {
-    const names = Array.from(nameEls)
-      .map((el) => el.textContent?.trim())
-      .filter(Boolean);
-    if (names.length > 0) return names.join(" // ");
-  }
-
-  // 2. Page <title> — format: "Card Name · Set Name (SET) #123 · Scryfall ..."
   const titleTag = document.querySelector("title");
   if (titleTag?.textContent) {
-    const titleName = titleTag.textContent.split(" · ")[0]?.trim();
+    const titleName = titleTag.textContent.split(" - ")[0]?.trim();
     if (titleName) return titleName;
   }
 
-  // 3. URL-derived name (lossy — missing punctuation)
+  const h1 = document.querySelector("h1");
+  if (h1?.textContent?.trim()) {
+    return h1.textContent.trim();
+  }
+
+  const img = document.querySelector<HTMLImageElement>('img[src*="images.manapool.com/products/mtg/cards/normal/"]');
+  if (img?.alt) {
+    const altName = img.alt.split(" - ")[0]?.trim();
+    if (altName) return altName;
+  }
+
   return fallback;
 }
 
@@ -127,13 +128,17 @@ function processCardPage() {
 
   const name = getCardName(parsed.name);
 
-  const imageContainers = document.querySelectorAll<HTMLElement>(
-    ".card-image-front, .card-image"
-  );
+  // Target the image containers (div.image-container wraps the card img)
+  const imageContainers = document.querySelectorAll<HTMLElement>("div.image-container");
 
   for (const container of imageContainers) {
     if (container.hasAttribute(PROCESSED_ATTR)) continue;
-    if (container.closest(".card-profile-prints, .prints, .reprint-list, .print-langs")) continue;
+
+    // Only target the large desktop image, skip small thumbnails
+    const img = container.querySelector<HTMLImageElement>("img");
+    if (!img) continue;
+    if (img.src && img.src.includes("/cards/small/")) continue;
+
     container.setAttribute(PROCESSED_ATTR, "true");
 
     const computed = window.getComputedStyle(container);
@@ -144,26 +149,27 @@ function processCardPage() {
     container.appendChild(createToggleButton(name, parsed.set, parsed.collectorNumber));
   }
 
-  // Fallback: button near card title if no image container was found
-  if (imageContainers.length === 0) {
-    const titleEl = document.querySelector<HTMLElement>("h1");
-    if (titleEl && !titleEl.hasAttribute(PROCESSED_ATTR)) {
-      titleEl.setAttribute(PROCESSED_ATTR, "true");
-      titleEl.style.position = "relative";
-      titleEl.style.display = "inline-flex";
-      titleEl.style.alignItems = "center";
-      titleEl.style.gap = "8px";
+  // Fallback: if no image containers found, try any card image
+  if (document.querySelectorAll(`[${PROCESSED_ATTR}]`).length === 0) {
+    const cardImgs = document.querySelectorAll<HTMLImageElement>(
+      'img[src*="images.manapool.com/products/mtg/cards/normal/"]'
+    );
+    for (const img of cardImgs) {
+      const parent = img.parentElement;
+      if (!parent || parent.hasAttribute(PROCESSED_ATTR)) continue;
+      parent.setAttribute(PROCESSED_ATTR, "true");
 
-      const btn = createToggleButton(name, parsed.set, parsed.collectorNumber);
-      btn.style.position = "relative";
-      btn.style.top = "0";
-      btn.style.right = "0";
-      titleEl.appendChild(btn);
+      const computed = window.getComputedStyle(parent);
+      if (computed.position === "static") {
+        parent.style.position = "relative";
+      }
+
+      parent.appendChild(createToggleButton(name, parsed.set, parsed.collectorNumber));
     }
   }
 }
 
-// -- Search results page --
+// -- Browse / search results --
 
 function processSearchResults() {
   const cardLinks = document.querySelectorAll<HTMLAnchorElement>(
@@ -178,7 +184,8 @@ function processSearchResults() {
     const img = link.querySelector("img");
     if (!img) continue;
 
-    const container = link.closest(".card-grid-item, .card-grid-item-card") || link;
+    // Find the closest grid item or use the link itself
+    const container = link.closest("li") || link;
     if (container.hasAttribute(PROCESSED_ATTR)) continue;
     container.setAttribute(PROCESSED_ATTR, "true");
 
@@ -188,18 +195,16 @@ function processSearchResults() {
       el.style.position = "relative";
     }
 
-    // Use Scryfall's invisible label (most reliable), then image alt, then URL slug
-    const invisibleLabel = el.querySelector(".card-grid-item-invisible-label");
-    const cardName = invisibleLabel?.textContent?.trim()
-      || img.alt || img.title
-      || parsed.name.replace(/-/g, " ");
+    // Get card name from image alt (format: "Card Name - Set Name - Finish")
+    const cardName = img.alt
+      ? img.alt.split(" - ")[0].trim()
+      : parsed.name;
 
-    // Store card data on the element for refresh
     el.setAttribute("data-mp-name", cardName);
     el.setAttribute("data-mp-set", parsed.set);
     el.setAttribute("data-mp-number", parsed.collectorNumber);
 
-    // If already in list, show selected button immediately
+    // Show button if already in list
     if (isCardInList(cardName, parsed.set, parsed.collectorNumber)) {
       el.appendChild(createToggleButton(cardName, parsed.set, parsed.collectorNumber));
     }
@@ -221,7 +226,7 @@ function processSearchResults() {
   }
 }
 
-// -- Refresh button states when card list changes --
+// -- Refresh button states --
 
 function refreshButtonStates() {
   const allButtons = document.querySelectorAll<HTMLElement>(`[${BTN_ATTR}]`);
@@ -232,14 +237,12 @@ function refreshButtonStates() {
     const selected = isCardInList(name, set, num);
     setButtonState(btn, selected);
 
-    // On search pages, remove unselected buttons that aren't hovered
     const container = btn.closest(`[${PROCESSED_ATTR}]`) as HTMLElement | null;
     if (container && !selected && !container.matches(":hover")) {
       btn.remove();
     }
   }
 
-  // Re-add buttons for cards that are now in the list but don't have a button
   const allProcessed = document.querySelectorAll<HTMLElement>(`[${PROCESSED_ATTR}]`);
   for (const el of allProcessed) {
     if (el.querySelector(`[${BTN_ATTR}]`)) continue;
@@ -254,13 +257,27 @@ function refreshButtonStates() {
 
 // -- Main --
 
+let lastProcessedPath = "";
+
 function processPage() {
   const path = window.location.pathname;
-  if (path.match(/^\/card\//)) {
-    processCardPage();
-  } else {
-    processSearchResults();
+
+  // SvelteKit SPA: if the URL changed, clear processed markers so we re-process
+  if (path !== lastProcessedPath) {
+    const oldProcessed = document.querySelectorAll(`[${PROCESSED_ATTR}]`);
+    for (const el of oldProcessed) {
+      el.removeAttribute(PROCESSED_ATTR);
+      const btn = el.querySelector(`[${BTN_ATTR}]`);
+      if (btn) btn.remove();
+    }
+    lastProcessedPath = path;
   }
+
+  if (path.match(/^\/card\/[^/]+\/[^/]+\//)) {
+    processCardPage();
+  }
+  // Always run search results processing (card detail pages may have related printings)
+  processSearchResults();
 }
 
 initOverlay();

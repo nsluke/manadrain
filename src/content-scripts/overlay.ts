@@ -6,14 +6,17 @@ const SCRYFALL_IMG = "https://api.scryfall.com/cards/named?exact=";
 let overlayRoot: ShadowRoot | null = null;
 let expanded = false;
 let cards: CardEntry[] = [];
+let sortMode: "recent" | "alpha" | "price" = "recent";
 
 function getStyles(): string {
   return `
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
+
     :host {
       all: initial;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 14px;
-      color: #e0e0e0;
+      color: #e8dcc8;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -31,29 +34,31 @@ function getStyles(): string {
       width: 52px;
       height: 52px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #6d28d9, #7c3aed);
-      border: 2px solid #8b5cf6;
-      color: white;
-      font-size: 18px;
+      background: linear-gradient(135deg, #b8942e, #d4af37);
+      border: 2px solid #c9a84c;
+      color: #1a1410;
+      font-size: 22px;
       font-weight: 700;
+      font-family: 'Cinzel', serif;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 16px rgba(109, 40, 217, 0.4);
+      box-shadow: 0 4px 16px rgba(184, 148, 46, 0.4);
       transition: transform 0.15s, box-shadow 0.15s;
       position: relative;
     }
     .fab:hover {
       transform: scale(1.08);
-      box-shadow: 0 6px 20px rgba(109, 40, 217, 0.55);
+      box-shadow: 0 6px 20px rgba(184, 148, 46, 0.55);
     }
     .fab .badge {
       position: absolute;
       top: -4px;
       right: -4px;
-      background: #ef4444;
+      background: #c0392b;
       color: white;
+      font-family: 'Segoe UI', Roboto, sans-serif;
       font-size: 11px;
       font-weight: 700;
       min-width: 20px;
@@ -69,11 +74,11 @@ function getStyles(): string {
       display: none;
       width: 360px;
       max-height: 480px;
-      background: #1e1b2e;
-      border: 1px solid #3b3556;
-      border-radius: 12px;
+      background: #1a1410;
+      border: 1px solid #6b5a3e;
+      border-radius: 8px;
       margin-bottom: 10px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      box-shadow: inset 0 0 0 1px #4a3f2e, 0 8px 32px rgba(0, 0, 0, 0.6);
       flex-direction: column;
       overflow: hidden;
     }
@@ -84,18 +89,47 @@ function getStyles(): string {
       align-items: center;
       justify-content: space-between;
       padding: 12px 16px;
-      background: #2a2640;
-      border-bottom: 1px solid #3b3556;
+      background: #231e17;
+      border-bottom: 1px solid #6b5a3e;
+      box-shadow: 0 1px 0 rgba(201, 168, 76, 0.15);
     }
     .panel-header h3 {
+      font-family: 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
       font-size: 15px;
       font-weight: 700;
-      color: #c4b5fd;
+      color: #c9a84c;
+      letter-spacing: 0.5px;
     }
     .panel-header .total {
       font-size: 12px;
-      color: #a78bfa;
+      color: #c9a84c;
     }
+
+    .sort-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
+      background: #231e17;
+      border-bottom: 1px solid #6b5a3e;
+    }
+    .sort-icon {
+      color: #6b5f50;
+      font-size: 14px;
+    }
+    .sort-btn {
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid #4a3f2e;
+      background: transparent;
+      color: #8a7d6b;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+    }
+    .sort-btn:hover { background: #2a2318; color: #c9a84c; }
+    .sort-btn.active { background: #2a2318; color: #c9a84c; border-color: #c9a84c; }
 
     .card-list {
       flex: 1;
@@ -104,7 +138,7 @@ function getStyles(): string {
     }
     .card-list::-webkit-scrollbar { width: 6px; }
     .card-list::-webkit-scrollbar-track { background: transparent; }
-    .card-list::-webkit-scrollbar-thumb { background: #4c4470; border-radius: 3px; }
+    .card-list::-webkit-scrollbar-thumb { background: #6b5a3e; border-radius: 3px; }
 
     .card-item {
       display: flex;
@@ -113,8 +147,9 @@ function getStyles(): string {
       padding: 8px 16px;
       transition: background 0.1s;
       position: relative;
+      border-bottom: 1px solid #231e17;
     }
-    .card-item:hover { background: #2a2640; }
+    .card-item:hover { background: #2a2318; }
 
     .card-info {
       flex: 1;
@@ -123,7 +158,7 @@ function getStyles(): string {
     .card-name {
       font-size: 13px;
       font-weight: 600;
-      color: #e0e0e0;
+      color: #e8dcc8;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -132,21 +167,21 @@ function getStyles(): string {
       display: block;
     }
     .card-name:hover {
-      color: #c4b5fd;
+      color: #e6c453;
       text-decoration: underline;
     }
     .card-meta {
       font-size: 11px;
-      color: #8b82a8;
+      color: #8a7d6b;
       margin-top: 2px;
     }
     .card-price {
       font-size: 11px;
-      color: #a78bfa;
+      color: #c9a84c;
       margin-top: 1px;
     }
     .card-price.loading {
-      color: #6b6188;
+      color: #6b5f50;
       font-style: italic;
     }
 
@@ -159,9 +194,9 @@ function getStyles(): string {
       width: 24px;
       height: 24px;
       border-radius: 6px;
-      border: 1px solid #4c4470;
-      background: #2a2640;
-      color: #c4b5fd;
+      border: 1px solid #4a3f2e;
+      background: #231e17;
+      color: #c9a84c;
       font-size: 14px;
       cursor: pointer;
       display: flex;
@@ -169,11 +204,11 @@ function getStyles(): string {
       justify-content: center;
       transition: background 0.1s;
     }
-    .qty-btn:hover { background: #3b3556; }
+    .qty-btn:hover { background: #2a2318; }
     .qty-value {
       font-size: 13px;
       font-weight: 600;
-      color: #e0e0e0;
+      color: #e8dcc8;
       min-width: 20px;
       text-align: center;
     }
@@ -182,9 +217,9 @@ function getStyles(): string {
       padding: 0 6px;
       height: 24px;
       border-radius: 6px;
-      border: 1px solid #4c4470;
-      background: #2a2640;
-      color: #6b6188;
+      border: 1px solid #4a3f2e;
+      background: #231e17;
+      color: #6b5f50;
       font-size: 10px;
       font-weight: 600;
       cursor: pointer;
@@ -193,11 +228,11 @@ function getStyles(): string {
       justify-content: center;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .foil-btn:hover { background: #3b3556; }
+    .foil-btn:hover { background: #2a2318; }
     .foil-btn.active {
-      color: #fbbf24;
-      border-color: #fbbf24;
-      background: rgba(251, 191, 36, 0.15);
+      color: #e6c453;
+      border-color: #e6c453;
+      background: rgba(230, 196, 83, 0.15);
     }
 
     .delete-btn {
@@ -206,7 +241,7 @@ function getStyles(): string {
       border-radius: 6px;
       border: none;
       background: transparent;
-      color: #6b6188;
+      color: #6b5f50;
       font-size: 14px;
       cursor: pointer;
       display: flex;
@@ -214,12 +249,12 @@ function getStyles(): string {
       justify-content: center;
       transition: color 0.1s, background 0.1s;
     }
-    .delete-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+    .delete-btn:hover { color: #c0392b; background: rgba(192, 57, 43, 0.1); }
 
     .panel-actions {
       padding: 10px 16px;
-      background: #2a2640;
-      border-top: 1px solid #3b3556;
+      background: #231e17;
+      border-top: 1px solid #6b5a3e;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -231,33 +266,39 @@ function getStyles(): string {
     .action-btn {
       flex: 1;
       padding: 8px 12px;
-      border-radius: 8px;
+      border-radius: 6px;
       border: none;
-      font-size: 12px;
+      font-family: 'Cinzel', 'Palatino Linotype', Georgia, serif;
+      font-size: 11px;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
       cursor: pointer;
       transition: opacity 0.15s;
     }
     .action-btn:hover { opacity: 0.85; }
     .btn-primary {
-      background: linear-gradient(135deg, #6d28d9, #7c3aed);
-      color: white;
+      background: linear-gradient(180deg, #c9a84c 0%, #9e7b2f 100%);
+      color: #1a1410;
+      border: 1px solid #d4af37;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
     }
     .btn-secondary {
-      background: #3b3556;
-      color: #c4b5fd;
+      background: #2a2318;
+      color: #c9a84c;
+      border: 1px solid #6b5a3e;
     }
     .btn-danger {
       background: transparent;
-      color: #6b6188;
-      border: 1px solid #3b3556;
+      color: #8a7d6b;
+      border: 1px solid #4a3f2e;
     }
-    .btn-danger:hover { color: #ef4444; border-color: #ef4444; }
+    .btn-danger:hover { color: #c0392b; border-color: #c0392b; }
 
     .empty-state {
       padding: 32px 16px;
       text-align: center;
-      color: #6b6188;
+      color: #6b5f50;
       font-size: 13px;
     }
     .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
@@ -268,7 +309,7 @@ function getStyles(): string {
       pointer-events: none;
       border-radius: 12px;
       overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7), 0 0 0 2px #6b5a3e;
       display: none;
     }
     .card-tooltip img {
@@ -282,10 +323,11 @@ function getStyles(): string {
       position: fixed;
       bottom: 84px;
       right: 20px;
-      background: #22c55e;
+      background: #2d8a4e;
       color: white;
       padding: 8px 16px;
-      border-radius: 8px;
+      border-radius: 6px;
+      border: 1px solid #6b5a3e;
       font-size: 13px;
       font-weight: 600;
       opacity: 0;
@@ -306,6 +348,12 @@ function buildHTML(): string {
           <h3>Mana Pool List</h3>
           <span class="total" id="total-info"></span>
         </div>
+        <div class="sort-bar">
+          <span class="sort-icon">&#x21C5;</span>
+          <button class="sort-btn active" data-sort="recent">Recent</button>
+          <button class="sort-btn" data-sort="alpha">A-Z</button>
+          <button class="sort-btn" data-sort="price">Price</button>
+        </div>
         <div class="card-list" id="card-list"></div>
         <div class="panel-actions">
           <div class="btn-row">
@@ -318,7 +366,7 @@ function buildHTML(): string {
         </div>
       </div>
       <button class="fab" id="fab">
-        <span id="fab-icon">MP</span>
+        <span id="fab-icon">&#x2B23;</span>
         <span class="badge" id="fab-badge" style="display:none">0</span>
       </button>
     </div>
@@ -364,7 +412,17 @@ function renderCardList() {
     return;
   }
 
-  list.innerHTML = cards
+  const sorted = [...cards].sort((a, b) => {
+    if (sortMode === "alpha") return a.name.localeCompare(b.name);
+    if (sortMode === "price") {
+      const pa = a.manaPoolPrice ?? -1;
+      const pb = b.manaPoolPrice ?? -1;
+      return pb - pa; // highest first
+    }
+    return b.addedAt - a.addedAt; // most recent first
+  });
+
+  list.innerHTML = sorted
     .map(
       (c) => `
     <div class="card-item" data-id="${c.id}" data-name="${encodeURIComponent(c.name)}"${c.set ? ` data-set="${c.set}"` : ""}${c.collectorNumber ? ` data-number="${c.collectorNumber}"` : ""}>
@@ -400,6 +458,16 @@ function setupEvents() {
   const tooltipImg = overlayRoot.getElementById(
     "tooltip-img",
   ) as HTMLImageElement;
+
+  // Sort buttons
+  overlayRoot.querySelectorAll<HTMLElement>(".sort-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      sortMode = btn.dataset.sort as typeof sortMode;
+      overlayRoot!.querySelectorAll(".sort-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderCardList();
+    });
+  });
 
   fab.addEventListener("click", () => {
     expanded = !expanded;
