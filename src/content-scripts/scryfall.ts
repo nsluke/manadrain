@@ -12,7 +12,7 @@ function parseCardUrl(url: string): { set: string; collectorNumber: string; name
   if (!match) return null;
   return {
     set: match[1],
-    collectorNumber: match[2],
+    collectorNumber: decodeURIComponent(match[2]),
     name: decodeURIComponent(match[3]).replace(/-/g, " "),
   };
 }

@@ -83,6 +83,8 @@ export async function toggleFoil(id: string): Promise<CardEntry[]> {
   const data = await loadCards();
   const card = data.cards.find((c) => c.id === id);
   if (card) {
+    // Don't toggle off foil for foil-only cards
+    if (card.foilOnly && card.foil) return data.cards;
     card.foil = !card.foil;
     // Reset price so it re-fetches with the correct foil preference
     card.manaPoolPrice = undefined;
@@ -118,7 +120,7 @@ export async function importData(json: string): Promise<CardEntry[]> {
 }
 
 export async function updateCardPrices(
-  updates: { id: string; price: number | null; available: boolean }[]
+  updates: { id: string; price: number | null; available: boolean; foilOnly?: boolean }[]
 ): Promise<CardEntry[]> {
   const data = await loadCards();
   for (const update of updates) {
@@ -126,6 +128,13 @@ export async function updateCardPrices(
     if (card) {
       card.manaPoolPrice = update.price;
       card.manaPoolAvailable = update.available;
+      if (update.foilOnly != null) {
+        card.foilOnly = update.foilOnly;
+        // Auto-enable foil for foil-only cards
+        if (update.foilOnly && !card.foil) {
+          card.foil = true;
+        }
+      }
     }
   }
   await chrome.storage.sync.set({ [STORAGE_KEY]: data });

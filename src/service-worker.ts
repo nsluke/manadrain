@@ -101,9 +101,9 @@ function refreshPrices(cards: import("./shared/types").CardEntry[]) {
       }
 
       // Build updates keyed by card ID
-      const updates: { id: string; price: number | null; available: boolean }[] = [];
+      const updates: { id: string; price: number | null; available: boolean; foilOnly?: boolean }[] = [];
       for (const [id, info] of priceMap) {
-        updates.push({ id, price: info.price, available: info.available });
+        updates.push({ id, price: info.price, available: info.available, foilOnly: info.foilOnly });
       }
 
       const updatedCards = await updateCardPrices(updates);

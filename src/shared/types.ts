@@ -7,6 +7,7 @@ export interface CardEntry {
   addedFrom: string;
   addedAt: number;
   foil?: boolean;
+  foilOnly?: boolean;
   manaPoolPrice?: number | null;
   manaPoolAvailable?: boolean | null;
 }
@@ -40,7 +41,11 @@ export function formatMassEntry(cards: CardEntry[]): string {
     .map((c) => {
       let line = `${c.quantity} ${c.name}`;
       if (c.set) line += ` [${c.set.toUpperCase()}]`;
-      if (c.collectorNumber) line += ` ${c.collectorNumber}`;
+      if (c.collectorNumber) {
+        // Strip special suffixes (★, etc.) that mass entry parsers can't handle
+        const cleanNumber = c.collectorNumber.replace(/[^\da-zA-Z]/g, "");
+        line += ` ${cleanNumber}`;
+      }
       if (c.foil) line += ` *F*`;
       return line;
     })

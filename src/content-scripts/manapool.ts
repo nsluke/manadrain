@@ -10,7 +10,7 @@ function parseCardUrl(url: string): { set: string; collectorNumber: string; name
   if (!match) return null;
   return {
     set: match[1],
-    collectorNumber: match[2],
+    collectorNumber: decodeURIComponent(match[2]),
     name: decodeURIComponent(match[3]).replace(/-/g, " "),
   };
 }
@@ -280,13 +280,52 @@ function processPage() {
   processSearchResults();
 }
 
+// -- Auto-paste mass entry on /add-deck page --
+
+function tryPasteMassEntry() {
+  if (!window.location.pathname.startsWith("/add-deck")) return;
+
+  chrome.storage.local.get(["massEntryText", "massEntryAt"], (data) => {
+    if (!data.massEntryText) return;
+    // Only auto-paste if stored within the last 10 seconds
+    if (Date.now() - (data.massEntryAt || 0) > 10000) return;
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea) return;
+
+    // Set the value and dispatch input event so SvelteKit picks up the change
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype, "value"
+    )?.set;
+    if (nativeSetter) {
+      nativeSetter.call(textarea, data.massEntryText);
+    } else {
+      textarea.value = data.massEntryText;
+    }
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Clear the stored text so it doesn't paste again on refresh
+    chrome.storage.local.remove(["massEntryText", "massEntryAt"]);
+  });
+}
+
 initOverlay();
 processPage();
+tryPasteMassEntry();
 
 onCardsUpdated(refreshButtonStates);
 
+let massEntryPasted = false;
+
 const observer = new MutationObserver(() => {
   processPage();
+  if (!massEntryPasted && window.location.pathname.startsWith("/add-deck")) {
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    if (textarea) {
+      massEntryPasted = true;
+      tryPasteMassEntry();
+    }
+  }
 });
 
 observer.observe(document.body, {

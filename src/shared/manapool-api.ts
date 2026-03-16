@@ -12,6 +12,13 @@
 const MANAPOOL_API = "https://manapool.com/api/v1";
 const SCRYFALL_API = "https://api.scryfall.com";
 
+interface ManaPoolVariant {
+  finish_id: string; // "NF" | "FO" | "ET"
+  condition_id: string; // "NM" | "LP" | "MP" | "HP" | "DMG"
+  low_price: number;
+  available_quantity: number;
+}
+
 interface ManaPoolProduct {
   name: string;
   set_code: string;
@@ -24,6 +31,7 @@ interface ManaPoolProduct {
   price_market: number | null;
   price_market_foil: number | null;
   url: string;
+  variants?: ManaPoolVariant[];
 }
 
 interface ManaPoolResponse {
@@ -123,6 +131,26 @@ interface ManaPoolPriceData {
   foilPrice: number | null;
   etchedPrice: number | null;
   available: boolean;
+  foilAvailable: boolean;
+  etchedAvailable: boolean;
+  foilOnly: boolean;
+}
+
+/**
+ * Compute price and availability from variants for a given finish.
+ * Returns the lowest price among available NM/LP variants, and total available qty.
+ */
+function computeFromVariants(
+  variants: ManaPoolVariant[],
+  finishId: string
+): { price: number | null; available: boolean } {
+  const matching = variants.filter(
+    (v) => v.finish_id === finishId && v.available_quantity > 0 && v.low_price > 0
+  );
+  if (matching.length === 0) return { price: null, available: false };
+  const lowest = Math.min(...matching.map((v) => v.low_price));
+  const totalQty = matching.reduce((sum, v) => sum + v.available_quantity, 0);
+  return { price: lowest / 100, available: totalQty > 0 };
 }
 
 /**
@@ -152,11 +180,56 @@ async function fetchManaPoolPrices(
       const data: ManaPoolResponse = await resp.json();
 
       for (const product of data.data) {
-        const price = product.price_cents != null ? product.price_cents / 100 : null;
-        const foilPrice = product.price_cents_foil != null ? product.price_cents_foil / 100 : null;
-        const etchedPrice = product.price_cents_etched != null ? product.price_cents_etched / 100 : null;
-        const available = product.available_quantity > 0;
-        results.set(product.scryfall_id, { price, foilPrice, etchedPrice, available });
+        // Try top-level prices first
+        let price = product.price_cents != null ? product.price_cents / 100 : null;
+        let foilPrice = product.price_cents_foil != null ? product.price_cents_foil / 100 : null;
+        let etchedPrice = product.price_cents_etched != null ? product.price_cents_etched / 100 : null;
+
+        let nonFoilAvailable = product.available_quantity > 0;
+        let foilAvailable = false;
+        let etchedAvailable = false;
+
+        // Fall back to variants when top-level fields are empty
+        if (product.variants && product.variants.length > 0) {
+          const hasNonFoilVariants = product.variants.some((v) => v.finish_id === "NF");
+          const hasFoilVariants = product.variants.some((v) => v.finish_id === "FO");
+          const hasEtchedVariants = product.variants.some((v) => v.finish_id === "ET");
+
+          if (price == null && hasNonFoilVariants) {
+            const computed = computeFromVariants(product.variants, "NF");
+            price = computed.price;
+            nonFoilAvailable = computed.available;
+          }
+          if (foilPrice == null && hasFoilVariants) {
+            const computed = computeFromVariants(product.variants, "FO");
+            foilPrice = computed.price;
+            foilAvailable = computed.available;
+          }
+          if (etchedPrice == null && hasEtchedVariants) {
+            const computed = computeFromVariants(product.variants, "ET");
+            etchedPrice = computed.price;
+            etchedAvailable = computed.available;
+          }
+
+          // Also update non-foil availability from variants if top-level was 0
+          if (!nonFoilAvailable && hasNonFoilVariants) {
+            nonFoilAvailable = product.variants
+              .filter((v) => v.finish_id === "NF")
+              .some((v) => v.available_quantity > 0);
+          }
+        }
+
+        const foilOnly = !hasAnyNonFoil(product);
+
+        results.set(product.scryfall_id, {
+          price,
+          foilPrice,
+          etchedPrice,
+          available: nonFoilAvailable,
+          foilAvailable,
+          etchedAvailable,
+          foilOnly,
+        });
       }
     } catch (err) {
       console.warn("Mana Pool API error:", err);
@@ -166,15 +239,31 @@ async function fetchManaPoolPrices(
   return results;
 }
 
+function hasAnyNonFoil(product: ManaPoolProduct): boolean {
+  // If there's a non-foil price, it's not foil-only
+  if (product.price_cents != null) return true;
+  // Check variants for any non-foil finish
+  if (product.variants) {
+    return product.variants.some((v) => v.finish_id === "NF");
+  }
+  return true; // Default to assuming non-foil exists
+}
+
 /**
  * Main entry point: given a list of cards (id + name + optional set/number),
  * resolve Scryfall IDs and fetch Mana Pool pricing.
  * Returns a map keyed by card ID (not name) to handle cards with the same name.
  */
+export interface PriceResult {
+  price: number | null;
+  available: boolean;
+  foilOnly?: boolean;
+}
+
 export async function fetchCardPrices(
   cards: { id: string; name: string; set?: string; collectorNumber?: string; foil?: boolean }[]
-): Promise<Map<string, { price: number | null; available: boolean }>> {
-  const results = new Map<string, { price: number | null; available: boolean }>();
+): Promise<Map<string, PriceResult>> {
+  const results = new Map<string, PriceResult>();
 
   // Step 1: Resolve Scryfall IDs and prices (with rate limiting)
   const cardToScryfall = new Map<string, ScryfallLookup>();
@@ -220,14 +309,17 @@ export async function fetchCardPrices(
 
       let price: number | null = null;
       let available = false;
+      let foilOnly = false;
 
       if (mpData) {
-        available = mpData.available;
-        // Pick the right ManaPool price based on foil status
+        foilOnly = mpData.foilOnly;
+        // Pick the right ManaPool price and availability based on foil status
         if (isFoil) {
           price = mpData.foilPrice ?? mpData.etchedPrice ?? mpData.price;
+          available = mpData.foilAvailable || mpData.etchedAvailable || mpData.available;
         } else {
           price = mpData.price ?? mpData.foilPrice ?? mpData.etchedPrice;
+          available = mpData.available || mpData.foilAvailable || mpData.etchedAvailable;
         }
       }
 
@@ -238,7 +330,7 @@ export async function fetchCardPrices(
           : (scryfall.scryfallPrice ?? scryfall.scryfallFoilPrice);
       }
 
-      const result = { price, available };
+      const result: PriceResult = { price, available, foilOnly };
       results.set(cardId, result);
       const priceCacheKey = `${scryfall.id}:${isFoil ? "foil" : "nonfoil"}`;
       priceCache.set(priceCacheKey, { ...result, fetchedAt: Date.now() });

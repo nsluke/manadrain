@@ -41,9 +41,9 @@ function createAddButton(onClick: () => void): HTMLElement {
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #6d28d9, #7c3aed);
-    border: 2px solid #8b5cf6;
-    color: white;
+    background: linear-gradient(135deg, #b8942e, #d4af37);
+    border: 2px solid #c9a84c;
+    color: #1a1410;
     font-size: 16px;
     font-weight: 700;
     cursor: pointer;
@@ -52,7 +52,7 @@ function createAddButton(onClick: () => void): HTMLElement {
     align-items: center;
     justify-content: center;
     line-height: 1;
-    box-shadow: 0 2px 8px rgba(109, 40, 217, 0.5);
+    box-shadow: 0 2px 8px rgba(184, 148, 46, 0.4);
     transition: transform 0.12s, box-shadow 0.12s;
     padding: 0;
     font-family: -apple-system, system-ui, sans-serif;
@@ -68,12 +68,12 @@ function createAddButton(onClick: () => void): HTMLElement {
     e.stopPropagation();
     onClick();
     btn.textContent = "\u2713";
-    btn.style.background = "#22c55e";
-    btn.style.borderColor = "#16a34a";
+    btn.style.background = "linear-gradient(180deg, #c9a84c, #9e7b2f)";
+    btn.style.borderColor = "#d4af37";
     setTimeout(() => {
       btn.textContent = "+";
-      btn.style.background = "linear-gradient(135deg, #6d28d9, #7c3aed)";
-      btn.style.borderColor = "#8b5cf6";
+      btn.style.background = "linear-gradient(135deg, #b8942e, #d4af37)";
+      btn.style.borderColor = "#c9a84c";
     }, 800);
   });
   return btn;
@@ -169,9 +169,9 @@ function processCards() {
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #6d28d9, #7c3aed);
-      border: 1px solid #8b5cf6;
-      color: white;
+      background: linear-gradient(135deg, #b8942e, #d4af37);
+      border: 1px solid #c9a84c;
+      color: #1a1410;
       font-size: 13px;
       font-weight: 700;
       cursor: pointer;
@@ -186,10 +186,10 @@ function processCards() {
       e.stopPropagation();
       addCardFromSite(cleanCardName(cardName), undefined, undefined, SOURCE);
       btn.textContent = "\u2713";
-      btn.style.background = "#22c55e";
+      btn.style.background = "linear-gradient(180deg, #c9a84c, #9e7b2f)";
       setTimeout(() => {
         btn.textContent = "+";
-        btn.style.background = "linear-gradient(135deg, #6d28d9, #7c3aed)";
+        btn.style.background = "linear-gradient(135deg, #b8942e, #d4af37)";
       }, 800);
     });
     link.parentElement?.insertBefore(btn, link.nextSibling);

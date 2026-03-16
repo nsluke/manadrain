@@ -234,6 +234,30 @@ function getStyles(): string {
       border-color: #e6c453;
       background: rgba(230, 196, 83, 0.15);
     }
+    .foil-btn.foil-only {
+      cursor: default;
+      opacity: 0.85;
+    }
+    .foil-only-toast {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #231e17;
+      border: 1px solid #6b5a3e;
+      color: #e6c453;
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 100001;
+      animation: fadeOut 2s forwards;
+    }
+    @keyframes fadeOut {
+      0%, 70% { opacity: 1; }
+      100% { opacity: 0; }
+    }
 
     .delete-btn {
       width: 24px;
@@ -431,7 +455,7 @@ function renderCardList() {
         <div class="card-meta">${c.set ? c.set.toUpperCase() : ""}${c.collectorNumber ? " #" + c.collectorNumber : ""} &middot; ${c.addedFrom}</div>
         ${c.manaPoolPrice != null ? `<div class="card-price">$${(c.manaPoolPrice * c.quantity).toFixed(2)}${c.manaPoolAvailable ? "" : " · out of stock"}</div>` : c.manaPoolPrice === undefined ? `<div class="card-price loading">loading price…</div>` : `<div class="card-price">price unavailable</div>`}
       </div>
-      <button class="foil-btn${c.foil ? " active" : ""}" data-action="foil" data-id="${c.id}" title="Toggle foil">Foil</button>
+      <button class="foil-btn${c.foil ? " active" : ""}${c.foilOnly ? " foil-only" : ""}" data-action="foil" data-id="${c.id}" title="${c.foilOnly ? "This card is only available in foil" : "Toggle foil"}">Foil</button>
       <div class="qty-controls">
         <button class="qty-btn" data-action="dec" data-id="${c.id}">-</button>
         <span class="qty-value">${c.quantity}</span>
@@ -505,6 +529,19 @@ function setupEvents() {
         });
       }
     } else if (action === "foil") {
+      const card = cards.find((c) => c.id === id);
+      if (card?.foilOnly) {
+        // Show a small tooltip explaining it's foil-only
+        const existing = btn.querySelector(".foil-only-toast");
+        if (existing) existing.remove();
+        btn.style.position = "relative";
+        const toast = document.createElement("span");
+        toast.className = "foil-only-toast";
+        toast.textContent = "This card is only available in foil!";
+        btn.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+        return;
+      }
       chrome.runtime.sendMessage({ type: "TOGGLE_FOIL", id });
     } else if (action === "delete") {
       chrome.runtime.sendMessage({ type: "REMOVE_CARD", id });
@@ -559,7 +596,11 @@ function setupEvents() {
   });
 
   overlayRoot.getElementById("btn-open")!.addEventListener("click", () => {
-    window.open("https://manapool.com/add-deck", "_blank");
+    const text = formatMassEntry(cards);
+    // Store mass entry text for the ManaPool content script to auto-paste
+    chrome.storage.local.set({ massEntryText: text, massEntryAt: Date.now() }, () => {
+      window.open("https://manapool.com/add-deck", "_blank");
+    });
   });
 
   overlayRoot.getElementById("btn-clear")!.addEventListener("click", () => {

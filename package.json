@@ -5,11 +5,13 @@
   "description": "Chrome extension to collect MTG cards into a shopping list for Mana Pool",
   "scripts": {
     "build": "node build.mjs",
-    "watch": "node build.mjs --watch"
+    "watch": "node build.mjs --watch",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.37",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
   }
 }
