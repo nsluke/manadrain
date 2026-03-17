@@ -22,6 +22,16 @@ A Chrome extension that lets Magic: The Gathering players collect cards from pop
 - **Persistent storage** via `chrome.storage.sync` across sessions
 - **MTG-themed UI** — gold and mahogany design with Cinzel font
 
+## Screenshots
+
+| Scryfall | EDHREC |
+|----------|--------|
+| ![Scryfall](screenshots/scryfall.png) | ![EDHREC](screenshots/edhrec.png) |
+
+| BotBox | Menu |
+|--------|------|
+| ![BotBox](screenshots/botbox.png) | ![Menu](screenshots/menu.png) |
+
 ## Installation
 
 ### From Release (recommended)
